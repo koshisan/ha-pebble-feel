@@ -3,10 +3,8 @@ from __future__ import annotations
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components.bluetooth import (
-    async_discovered_service_info,
-    BluetoothServiceInfoBleak,
-)
+from homeassistant.components import bluetooth
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 from .const import DOMAIN, PF_SERVICE_UUID, CONF_POLL_INTERVAL
 
@@ -18,7 +16,9 @@ class PebbleFeelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initial step required by Home Assistant."""
         return await self.async_step_user()
 
-    async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak):
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfoBleak
+    ):
         """Handle bluetooth discovery."""
         address = discovery_info.address
         await self.async_set_unique_id(address)
@@ -41,10 +41,12 @@ class PebbleFeelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
-        # Discover Pebble Feel by BLE UUID
+        # 2025 BLE discovery cache access
         discovered = [
             info
-            for info in async_discovered_service_info(self.hass)
+            for info in bluetooth.async_discovered_service_info(
+                self.hass, connectable=True
+            )
             if PF_SERVICE_UUID in info.service_uuids
         ]
 
