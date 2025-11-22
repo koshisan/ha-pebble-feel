@@ -14,22 +14,34 @@ from .const import DOMAIN, PF_SERVICE_UUID, CONF_POLL_INTERVAL
 class PebbleFeelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    async def async_step_init(self, user_input=None):
+        """Initial step required by Home Assistant."""
+        return await self.async_step_user()
+
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak):
+        """Handle bluetooth discovery."""
         address = discovery_info.address
         await self.async_set_unique_id(address)
         self._abort_if_unique_id_configured()
         self.context["title_placeholders"] = {"name": discovery_info.name}
-        return await self.async_step_user({"address": address, "name": discovery_info.name})
+        return await self.async_step_user(
+            {"address": address, "name": discovery_info.name}
+        )
 
     async def async_step_user(self, user_input=None):
+        """User step."""
         errors = {}
+
         if user_input is not None:
             return self.async_create_entry(
                 title=user_input.get("name") or "Pebble Feel",
                 data={"address": user_input["address"]},
-                options={CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, 30)},
+                options={
+                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, 30)
+                },
             )
 
+        # Discover Pebble Feel by BLE UUID
         discovered = [
             info
             for info in async_discovered_service_info(self.hass)
@@ -38,10 +50,20 @@ class PebbleFeelConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required("address", default=discovered[0].address if discovered else ""): str,
+                vol.Required(
+                    "address",
+                    default=discovered[0].address if discovered else "",
+                ): str,
                 vol.Optional("name"): str,
-                vol.Optional(CONF_POLL_INTERVAL, default=30): vol.Coerce(int),
+                vol.Optional(
+                    CONF_POLL_INTERVAL,
+                    default=30,
+                ): vol.Coerce(int),
             }
         )
 
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=schema,
+            errors=errors,
+        )
