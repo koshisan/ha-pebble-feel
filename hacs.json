@@ -1,0 +1,9 @@
+{
+  "name": "Pebble Feel",
+  "content_in_root": false,
+  "domains": [
+    "pebble_feel"
+  ],
+  "homeassistant": "2023.7.0",
+  "render_readme": true
+}
