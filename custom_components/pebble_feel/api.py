@@ -5,9 +5,11 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from bleak import BleakClient
 from bleak.backends.device import BLEDevice
-from homeassistant.components.bluetooth import async_ble_device_from_address
-from homeassistant.components.bluetooth.wrappers import BleakClientWithServiceCache
+from bleak_retry_connector import establish_connection
+
+from homeassistant.components import bluetooth
 
 from .const import (
     WRITE_UUID_ALT,
@@ -60,28 +62,35 @@ class PebbleState:
 
 
 class PebbleFeelClient:
-    """Thin GATT client using HA's BLE wrapper."""
+    """Thin GATT client using Home Assistant's BLE stack (2025-compatible)."""
 
     def __init__(self, hass, address: str):
         self.hass = hass
         self.address = address
-        self._client: Optional[BleakClientWithServiceCache] = None
+        self._client: Optional[BleakClient] = None
         self._notify_lock = asyncio.Lock()
         self._notify_future: Optional[asyncio.Future] = None
 
     def _get_ble_device(self) -> BLEDevice | None:
-        return async_ble_device_from_address(self.hass, self.address)
+        # 2025 API: go via bluetooth module, not wrappers
+        return bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
 
-    async def _connect(self):
+    async def _connect(self) -> BleakClient:
         ble_device = self._get_ble_device()
         if not ble_device:
-            raise RuntimeError("Pebble Feel BLE device not found")
-        client = BleakClientWithServiceCache(ble_device)
-        await client.connect()
+            raise RuntimeError("Pebble Feel BLE device not found / not in range")
+
+        client: BleakClient = await establish_connection(
+            BleakClient,
+            ble_device,
+            self.address,
+        )
         self._client = client
         return client
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         if self._client and self._client.is_connected:
             try:
                 await self._client.disconnect()
@@ -89,7 +98,7 @@ class PebbleFeelClient:
                 pass
         self._client = None
 
-    async def write_enable(self, enable: bool):
+    async def write_enable(self, enable: bool) -> None:
         client = await self._connect()
         try:
             cmd = CMD_ENABLE if enable else CMD_DISABLE
@@ -97,7 +106,7 @@ class PebbleFeelClient:
         finally:
             await self._disconnect()
 
-    async def write_mode(self, mode_name: str, auto_enable: bool = True):
+    async def write_mode(self, mode_name: str, auto_enable: bool = True) -> None:
         client = await self._connect()
         try:
             if auto_enable:
@@ -108,7 +117,7 @@ class PebbleFeelClient:
         finally:
             await self._disconnect()
 
-    async def _notify_handler(self, _sender, data: bytearray):
+    async def _notify_handler(self, _sender, data: bytearray) -> None:
         async with self._notify_lock:
             if self._notify_future and not self._notify_future.done():
                 self._notify_future.set_result(bytes(data))
@@ -145,6 +154,7 @@ class PebbleFeelClient:
     async def read_state(self) -> PebbleState:
         enabled_val = await self.read_address(0x80)
         mode_val = await self.read_address(0x90)
+
         st = PebbleState()
         if enabled_val is not None:
             st.enabled = (enabled_val & 0x0001) == 1
